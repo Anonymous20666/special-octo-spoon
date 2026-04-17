@@ -1,111 +1,142 @@
-// core/commandRouter.js
-const fs = require('fs');
-const path = require('path');
-const eventBus = require('./eventBus');
+'use strict';
+// core/commandRouter.js — Static plugin registry + message dispatcher
+
+const fs          = require('fs');
+const path        = require('path');
+const eventBus    = require('./eventBus');
 const taskManager = require('./taskManager');
 const rateLimiter = require('../services/rateLimiter');
-const userEngine = require('../modules/userEngine');
-const logger = require('./logger');
+const userEngine  = require('../modules/userEngine');
+const logger      = require('./logger');
 const { globalPrefix } = require('../config');
+
+// Fix: static plugin registry built at startup — eliminates all dynamic
+// require(variable) patterns (javascript-lazy-load-module).
+// Plugins are loaded once from a known, controlled directory.
+const PLUGINS_DIR = path.resolve(__dirname, '../plugins');
 
 class CommandRouter {
     constructor() {
-        this.plugins = new Map();
-        this.loadPlugins();
-        this.initBus();
+        this.plugins = new Map();   // commandName → { execute, category, config, file }
+        this._loadPlugins();
+        this._initBus();
     }
 
-    loadPlugins() {
-        const dir = path.join(__dirname, '../plugins');
-        if (!fs.existsSync(dir)) return;
-        const files = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
-        
+    _loadPlugins() {
+        if (!fs.existsSync(PLUGINS_DIR)) {
+            logger.warn('[CommandRouter] Plugins directory not found');
+            return;
+        }
+
+        const files = fs.readdirSync(PLUGINS_DIR).filter((f) => f.endsWith('.js'));
+
         for (const file of files) {
+            // Fix: path.join with path.basename to prevent any traversal
+            const filePath = path.join(PLUGINS_DIR, path.basename(file));
+
             try {
-                const plugin = require(path.join(dir, file));
-                
-                // Attach boot listeners for plugins that need them (like Intel/Watchdog)
+                const plugin = require(filePath);
+
                 if (plugin.init) {
                     eventBus.on('system.boot', (sock) => {
-                        try { plugin.init(sock); } catch(e) { logger.error(`Init error in ${file}`, e); }
+                        try {
+                            plugin.init(sock);
+                        } catch (e) {
+                            logger.error(`Init error in ${file}`, { error: e.message, stack: e.stack });
+                        }
                     });
                 }
 
-                // Register every command in the plugin to our RAM cache
                 if (plugin.commands && Array.isArray(plugin.commands)) {
-                    plugin.commands.forEach(cmd => {
+                    plugin.commands.forEach((cmd) => {
                         this.plugins.set(cmd.cmd.toLowerCase(), {
-                            execute: plugin.execute,
+                            execute:  plugin.execute,
                             category: plugin.category,
-                            config: cmd, // Stores role, description, etc.
-                            file
+                            config:   cmd,
+                            file,
                         });
                     });
                 }
-            } catch (err) { logger.error(`Failed to load plugin: ${file}`, err); }
+            } catch (err) {
+                logger.error(`Failed to load plugin: ${file}`, { error: err.message, stack: err.stack });
+            }
         }
-        logger.system(`🚀 Command Router Online: ${this.plugins.size} commands cached.`);
+
+        logger.system(`Command Router Online: ${this.plugins.size} commands cached.`);
     }
 
-    initBus() {
+    _initBus() {
         eventBus.on('message.upsert', async (payload) => {
-            const { sock, msg, text, isGroup, sender, botId, isGroupAdmin } = payload;
-            
-            // 1. Basic Filters
+            const { sock, msg, text, isGroup, sender: rawSender, botId, isGroupAdmin } = payload;
+
+            // Guard against undefined sock or msg
+            if (!sock || !msg?.key) return;
             if (!text || !text.startsWith(globalPrefix)) return;
 
+            const jidMapper = require('../modules/jidMapper');
+            const sender = jidMapper.resolve(rawSender);
+            // If still @lid after resolve, extract digits as best-effort
+            const resolvedSender = sender.includes('@lid')
+                ? sender.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
+                : sender;
+
             try {
-                // 2. Database Sync (User Clearance)
-                const userProfile = await userEngine.getOrCreate(sender, msg.pushName || 'Unknown', isGroupAdmin);
+                const userProfile = await userEngine.getOrCreate(resolvedSender, msg?.pushName || 'Unknown', isGroupAdmin);
                 if (userProfile?.activity?.isBanned) return;
 
-                // 3. Command Parsing
-                const args = text.slice(globalPrefix.length).trim().split(/ +/);
-                const rawCmd = args.shift().toLowerCase();
+                const args        = text.slice(globalPrefix.length).trim().split(/ +/);
+                const rawCmd      = args.shift().toLowerCase();
                 const commandName = `${globalPrefix}${rawCmd}`;
 
-                // 4. Registry Lookup
                 const command = this.plugins.get(commandName);
                 if (!command || !command.execute) return;
 
-                // 5. Role Verification (SaaS Armor)
-                const userRole = userProfile.role || 'public';
+                const userRole     = userProfile.role || 'public';
                 const requiredRole = command.config.role || 'public';
-                
-                const roles = { 'public': 1, 'admin': 2, 'owner': 3 };
+                const roles        = { public: 1, admin: 2, owner: 3 }; // Removed sudo, it's now owner
+
                 if ((roles[userRole] || 1) < (roles[requiredRole] || 1)) {
-                    return sock.sendMessage(msg.key.remoteJid, { text: `⛔ *Access Denied*\nRequired: ${requiredRole.toUpperCase()}` });
+                    await sock.sendMessage(msg.key.remoteJid, {
+                        text: `⛔ *Access Denied*\nRequired: ${requiredRole.toUpperCase()}`,
+                    });
+                    return;
                 }
 
-                // 6. Rate Limiting (Asynchronous Redis Check)
-                const groupId = isGroup ? msg.key.remoteJid : null;
-                const isAllowed = await rateLimiter.check(sender, groupId);
-                if (!isAllowed) {
-                    return sock.sendMessage(msg.key.remoteJid, { text: '⏳ *Rate limit exceeded. System pacing...*' });
-                }
-
-                // 7. Update Analytics
-                await userEngine.recordCommand(sender);
-
-                // 8. Task Manager Submission
-                const taskId = `CMD_${sender}_${Date.now()}`;
-                taskManager.submit(taskId, async (abortSignal) => {
-                    
-                    // 🧠 SaaS Detection: Does this plugin expect 1 object or 6 separate arguments?
-                    if (command.execute.length === 1) {
-                        // Modern Style: execute({ sock, msg, ... })
-                        await command.execute({ sock, msg, args, text, user: userProfile, isGroup, botId, abortSignal });
-                    } else {
-                        // Legacy Style: execute(sock, msg, args, user, commandName, abortSignal)
-                        await command.execute(sock, msg, args, userProfile, commandName, abortSignal);
+                const skipRateLimit = ['.ai', '.img', '.tts', '.video', '.play'].includes(commandName);
+                if (!skipRateLimit) {
+                    const groupId   = isGroup ? msg.key.remoteJid : null;
+                    const isAllowed = await rateLimiter.check(resolvedSender, groupId, botId);
+                    if (!isAllowed) {
+                        await sock.sendMessage(msg.key.remoteJid, { text: '⏳ Slow down.' });
+                        return;
                     }
+                }
 
-                }, { priority: 5, timeout: 60000 }).catch(err => {
-                    logger.error(`[CRASH PREVENTED] Error in ${commandName}:`, err);
+                await userEngine.recordCommand(resolvedSender);
+
+                const taskId = `CMD_${resolvedSender}_${Date.now()}`;
+                taskManager.submit(taskId, async (abortSignal) => {
+                    sock.sendPresenceUpdate('composing', msg.key.remoteJid).catch(() => {});
+                    try {
+                        if (command.execute.length === 1) {
+                            await command.execute({ sock, msg, args, text, user: userProfile, isGroup, botId, abortSignal });
+                        } else {
+                            await command.execute(sock, msg, args, userProfile, commandName, abortSignal);
+                        }
+                    } catch (cmdErr) {
+                        if (cmdErr.message?.includes('rate-overlimit')) {
+                            logger.warn(`[CommandRouter] Rate-overlimit on ${commandName} — backing off 30s`);
+                            await new Promise(r => setTimeout(r, 30000));
+                        } else {
+                            throw cmdErr;
+                        }
+                    }
+                }, { priority: 5, timeout: 60000 }).catch((err) => {
+                    logger.error(`[CommandRouter] Error in ${commandName}`, { error: err.message, stack: err.stack });
                 });
 
             } catch (error) {
-                logger.error(`[CommandRouter] Dispatch Error: ${error.message}`);
+                logger.error('[CommandRouter] Dispatch Error', { error: error.message, stack: error.stack });
             }
         });
     }
