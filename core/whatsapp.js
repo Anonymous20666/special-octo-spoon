@@ -381,24 +381,23 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                         const execAsync = util.promisify(exec);
                         const command = response.slice(16).trim();
                         
-                        // SECURITY: Blacklist destructive commands
-                        const blacklist = [
-                            'rm', 'rmdir', 'unlink', 'del', 'delete',
-                            'reboot', 'shutdown', 'poweroff', 'halt', 'init',
-                            'kill', 'killall', 'pkill',
-                            'mkfs', 'fdisk', 'parted', 'dd',
-                            'sudo', 'su',
-                            'iptables', 'ufw', 'firewall-cmd',
-                            'mv', 'cp', 'chmod', 'chown',
-                            '>', '>>', 'tee'
+                        // SECURITY: Only block truly destructive commands
+                        const destructivePatterns = [
+                            /rm\s+-rf\s+\//, // rm -rf / or any root deletion
+                            /rm\s+-rf\s+~/, // rm -rf home directory
+                            /rm\s+-rf\s+\*/, // rm -rf * in current dir
+                            /reboot/, /shutdown/, /poweroff/, /halt/,
+                            /mkfs/, /fdisk.*w/, /dd.*of=\/dev/,
+                            /pm2\s+(delete|kill)\s+all/, // don't kill all pm2 processes
+                            /systemctl\s+stop\s+(pm2|nginx|mysql|postgres)/ // don't stop critical services
                         ];
                         
-                        const isBlacklisted = blacklist.some(cmd => 
-                            command.toLowerCase().includes(cmd)
+                        const isDestructive = destructivePatterns.some(pattern => 
+                            pattern.test(command.toLowerCase())
                         );
                         
-                        if (isBlacklisted) {
-                            await sock.sendMessage(jid, { text: 'nah that command is blocked. i only do recon and info gathering. can\'t risk the infrastructure' }, { quoted: msg });
+                        if (isDestructive) {
+                            await sock.sendMessage(jid, { text: 'nah that\'s destructive. i don\'t break infrastructure. i can do everything else tho' }, { quoted: msg });
                             logger.warn(`[AI] Blocked destructive command: ${command}`);
                             return;
                         }
