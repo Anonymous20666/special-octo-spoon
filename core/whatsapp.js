@@ -285,7 +285,8 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
         // AI ONLY responds when EXPLICITLY mentioned or replied to
         const shouldRespond = isGroup && pappyOn && (
             isMentioned || 
-            isReplyToBot
+            isReplyToBot ||
+            isStickerReplyToBot
         );
         
         if (shouldRespond && !text.startsWith(globalPrefix)) {
