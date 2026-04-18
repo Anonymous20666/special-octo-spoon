@@ -374,6 +374,32 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                     response = await ai.generateText(cleanPrompt, sender);
                 } else return;
 
+                if (response.startsWith('EXECUTE_COMMAND:')) {
+                    try {
+                        const { exec } = require('child_process');
+                        const util = require('util');
+                        const execAsync = util.promisify(exec);
+                        const command = response.slice(16).trim();
+                        
+                        logger.info(`[AI] Executing command: ${command}`);
+                        
+                        const { stdout, stderr } = await execAsync(command, { 
+                            timeout: 30000,
+                            maxBuffer: 1024 * 1024
+                        });
+                        
+                        const output = (stdout + stderr).trim();
+                        const result = output.length > 0 ? output : 'command executed successfully';
+                        const finalOutput = result.length > 2000 ? result.slice(0, 2000) + '\n\n... (output truncated)' : result;
+                        
+                        await sock.sendMessage(jid, { text: `\`\`\`\n${finalOutput}\n\`\`\`` }, { quoted: msg });
+                        logger.success('[AI] Command executed');
+                    } catch (err) {
+                        logger.error(`[AI] Command failed: ${err.message}`);
+                        await sock.sendMessage(jid, { text: `error: ${err.message}` }, { quoted: msg });
+                    }
+                    return;
+                }
                 if (response.startsWith('PLAY:')) {
                     const musicModule = require('../plugins/pappy-music');
                     await musicModule.execute({ sock, msg, args: response.slice(5).trim().split(' '), text: `.play ${response.slice(5).trim()}`, user: { name: 'AI' }, botId });
