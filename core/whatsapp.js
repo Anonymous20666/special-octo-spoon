@@ -344,7 +344,7 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                             global.stickerCache.set(cacheKey, stickerBuffer);
                         }
                         
-                        await sock.sendMessage(jid, { sticker: stickerBuffer });
+                        await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
                         logger.success('[AI] Sticker sent');
                     } catch (err) {
                         logger.error(`[AI] Sticker failed: ${err.message}`);
