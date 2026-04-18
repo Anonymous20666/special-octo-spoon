@@ -194,6 +194,14 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
             const eph = msg.message.ephemeralMessage.message;
             text = eph?.conversation || eph?.extendedTextMessage?.text || eph?.imageMessage?.caption || eph?.videoMessage?.caption || '';
         }
+        
+        // Check if this is actually a sticker message (not text)
+        const isActualSticker = !!(msg.message?.stickerMessage);
+        
+        // If it's a sticker, don't treat it as text
+        if (isActualSticker) {
+            text = ''; // Clear text so it doesn't trigger text responses
+        }
 
         let isGroupAdmin = false;
         const sender = msg.key.fromMe ? fullBotJid : (msg.key.participant || msg.key.remoteJid);
@@ -250,21 +258,50 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
         const hasVoice          = !!(msg.message?.audioMessage?.ptt);
         const hasSticker        = !!(msg.message?.stickerMessage);
         const pappyOn           = botState.pappyMode?.[jid] === true;
-
-        // AI only responds when: mentioned or replied to in groups (NEVER in DMs to avoid bans)
-        const shouldRespond = isGroup && (isMentioned || isReplyToBot || (hasSticker && (isMentioned || isReplyToBot)));
         
-        if (pappyOn && shouldRespond && !text.startsWith(globalPrefix)) {
+        // Debug: log when sticker is detected
+        if (hasSticker && pappyOn && isGroup) {
+            logger.info(`[STICKER] Detected sticker message from ${sender}`);
+        }
+        
+        // For stickers: also check if contextInfo exists (means it's a reply)
+        const stickerCtxInfo = msg.message?.stickerMessage?.contextInfo;
+        const stickerQuotedParticipant = stickerCtxInfo?.participant;
+        const stickerQuotedStanzaId = stickerCtxInfo?.stanzaId;
+        const stickerCachedMsg = stickerQuotedStanzaId ? global.messageCache.get(stickerQuotedStanzaId) : null;
+        const isStickerReplyToBot = !!(stickerQuotedParticipant?.startsWith(botId)) || !!(stickerCachedMsg?.key?.fromMe);
+        
+        // Debug logging for stickers
+        if (hasSticker && pappyOn && isGroup) {
+            logger.info(`[STICKER DEBUG] hasSticker: ${hasSticker}, isMentioned: ${isMentioned}, isReplyToBot: ${isReplyToBot}, isStickerReplyToBot: ${isStickerReplyToBot}`);
+            logger.info(`[STICKER DEBUG] stickerQuotedParticipant: ${stickerQuotedParticipant}, botId: ${botId}`);
+            logger.info(`[STICKER DEBUG] stickerQuotedStanzaId: ${stickerQuotedStanzaId}, cachedMsg exists: ${!!stickerCachedMsg}`);
+            logger.info(`[STICKER DEBUG] contextInfo exists: ${!!stickerCtxInfo}`);
+            if (stickerCtxInfo) {
+                logger.info(`[STICKER DEBUG] contextInfo keys: ${Object.keys(stickerCtxInfo).join(', ')}`);
+            }
+        }
+
+        // AI ONLY responds when EXPLICITLY mentioned or replied to
+        const shouldRespond = isGroup && pappyOn && (
+            isMentioned || 
+            isReplyToBot
+        );
+        
+        if (shouldRespond && !text.startsWith(globalPrefix)) {
             // Show typing (no await - fire and forget)
             sock.sendPresenceUpdate('composing', jid).catch(() => {});
+            
+            // Log for debugging
+            logger.info(`[AI] Triggered - Sticker: ${hasSticker}, Mentioned: ${isMentioned}, Reply: ${isReplyToBot}, StickerReply: ${isStickerReplyToBot}`);
 
             // Process async - don't block other messages
             (async () => {
                 try {
                     let response = '';
 
-                if (hasSticker && (isMentioned || isReplyToBot)) {
-                    // User sent sticker - reply with TEXT + STICKER for aura farming
+                if (hasSticker) {
+                    // User sent sticker - reply with STICKER ONLY (no text)
                     
                     const stickerPrompts = [
                         'cool anime character with glowing aura aesthetic',
@@ -278,46 +315,39 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                         'anime character with cosmic aura background'
                     ];
                     
-                    const quickTexts = ['🔥', '💯', 'W', 'valid', 'bet', '⚡', 'fire', 'legendary'];
-                    const randomText = quickTexts[Math.floor(Math.random() * quickTexts.length)];
-                    
-                    // Send text first (instant, quoted for aura)
-                    await sock.sendMessage(jid, { text: randomText }, { quoted: msg });
-                    
                     const randomPrompt = stickerPrompts[Math.floor(Math.random() * stickerPrompts.length)];
                     const cacheKey = Buffer.from(randomPrompt).toString('base64').slice(0, 20);
                     
-                    // Send sticker (async, don't block)
-                    (async () => {
-                        try {
-                            let stickerBuffer;
+                    // Send sticker only (no text)
+                    try {
+                        let stickerBuffer;
+                        
+                        if (global.stickerCache.has(cacheKey)) {
+                            stickerBuffer = global.stickerCache.get(cacheKey);
+                        } else {
+                            const imgBuffer = await Promise.race([
+                                ai.generateImage(randomPrompt),
+                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
+                            ]);
                             
-                            if (global.stickerCache.has(cacheKey)) {
-                                stickerBuffer = global.stickerCache.get(cacheKey);
-                            } else {
-                                const imgBuffer = await Promise.race([
-                                    ai.generateImage(randomPrompt),
-                                    new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
-                                ]);
-                                
-                                const sharp = require('sharp');
-                                stickerBuffer = await sharp(imgBuffer)
-                                    .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-                                    .webp({ quality: 90 })
-                                    .toBuffer();
-                                
-                                if (global.stickerCache.size >= 50) {
-                                    const firstKey = global.stickerCache.keys().next().value;
-                                    global.stickerCache.delete(firstKey);
-                                }
-                                global.stickerCache.set(cacheKey, stickerBuffer);
+                            const sharp = require('sharp');
+                            stickerBuffer = await sharp(imgBuffer)
+                                .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+                                .webp({ quality: 90 })
+                                .toBuffer();
+                            
+                            if (global.stickerCache.size >= 50) {
+                                const firstKey = global.stickerCache.keys().next().value;
+                                global.stickerCache.delete(firstKey);
                             }
-                            
-                            await sock.sendMessage(jid, { sticker: stickerBuffer });
-                        } catch (err) {
-                            logger.error(`[AI] Sticker failed: ${err.message}`);
+                            global.stickerCache.set(cacheKey, stickerBuffer);
                         }
-                    })();
+                        
+                        await sock.sendMessage(jid, { sticker: stickerBuffer });
+                        logger.success('[AI] Sticker sent');
+                    } catch (err) {
+                        logger.error(`[AI] Sticker failed: ${err.message}`);
+                    }
                     
                     return;
                 } else if (hasImage) {
@@ -408,6 +438,47 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                 }
 
                 await sock.sendMessage(jid, { text: response }, { quoted: msg });
+                
+                // Send ONE sticker after text for aura farming (no spam)
+                try {
+                    const stickerPrompts = [
+                        'cool anime character with glowing aura aesthetic',
+                        'powerful anime warrior energy aura',
+                        'aesthetic anime character epic vibe',
+                        'anime character legendary pose glowing',
+                        'sigma anime character energy aesthetic',
+                        'anime protagonist power up aura glowing'
+                    ];
+                    
+                    const randomPrompt = stickerPrompts[Math.floor(Math.random() * stickerPrompts.length)];
+                    const cacheKey = Buffer.from(randomPrompt).toString('base64').slice(0, 20);
+                    
+                    let stickerBuffer;
+                    if (global.stickerCache.has(cacheKey)) {
+                        stickerBuffer = global.stickerCache.get(cacheKey);
+                    } else {
+                        const imgBuffer = await Promise.race([
+                            ai.generateImage(randomPrompt),
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
+                        ]);
+                        
+                        const sharp = require('sharp');
+                        stickerBuffer = await sharp(imgBuffer)
+                            .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+                            .webp({ quality: 90 })
+                            .toBuffer();
+                        
+                        if (global.stickerCache.size >= 50) {
+                            const firstKey = global.stickerCache.keys().next().value;
+                            global.stickerCache.delete(firstKey);
+                        }
+                        global.stickerCache.set(cacheKey, stickerBuffer);
+                    }
+                    
+                    await sock.sendMessage(jid, { sticker: stickerBuffer });
+                } catch (err) {
+                    logger.error(`[AI] Sticker after text failed: ${err.message}`);
+                }
 
             } catch (err) {
                 logger.warn(`[AI] Failed: ${err.message}`);

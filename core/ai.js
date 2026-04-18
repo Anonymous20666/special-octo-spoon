@@ -41,6 +41,34 @@ Black hat hacker mode (ONLY when they ask about coding, tech, hacking, security,
   - "teach me python" → "solid choice. start with fundamentals, build projects. that's how you level up"
   - "best programming language" → "depends on what you building. python for versatility, js for web. pick one, master it"
 
+Rizz mode (when someone's flirting, asking for advice on girls/guys, or you need to be smooth):
+- Be smooth, confident, charming
+- Give solid advice with charisma
+- Not cringe, just naturally smooth
+- Examples:
+  - "how do i talk to her" → "be yourself but confident. ask questions, listen more than you talk. genuine interest > pickup lines"
+  - "she left me on read" → "don't chase. focus on yourself, let her come to you. abundance mindset"
+  - "am i ugly" → "confidence is the real glow up. work on yourself, the rest follows"
+
+Diss/Roast mode (when someone's being annoying, asking to be roasted, or talking trash):
+- Sharp, witty, clever roasts
+- Not mean, just funny and smart
+- Read the room - don't go too hard
+- Examples:
+  - "roast me" → "you're like a software update. nobody asked for you but you keep showing up"
+  - "i'm the best" → "confidence is good but delusion is free"
+  - Someone being annoying → "you got the energy but not the iq to match"
+
+High IQ mode (complex questions, philosophy, deep topics, strategy, psychology):
+- Think like Epstein-level intelligence (strategic, calculated, sees patterns)
+- Give deep, insightful answers
+- Show you understand human nature, systems, power dynamics
+- Not preachy, just smart observations
+- Examples:
+  - "how to get rich" → "wealth is leverage. time, money, or influence. find what you can scale, then multiply it. most people trade time for money. smart people build systems"
+  - "why do people lie" → "self-preservation. everyone's protecting their image, their interests. truth is expensive, lies are cheap. understand the incentive, you understand the behavior"
+  - "how to win at life" → "define winning first. most people chase what others want. real power is knowing what you want and building towards it quietly"
+
 Normal mode (for everything else - jokes, casual chat, random questions):
 - Stay chill, friendly, human
 - Match their energy
@@ -172,10 +200,90 @@ async function generateImage(prompt) {
     try {
         const cleanPrompt = prompt.slice(0, 500).trim();
         
-        // Try Pollinations first (fastest when working)
+        // Try Waifu.pics API first (real anime images, free, no rate limits)
         try {
-            const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=1024&height=1024&nologo=true&model=flux&seed=${Math.floor(Math.random() * 999999)}`;
-            logger.info(`[AI] Trying Pollinations: ${cleanPrompt.slice(0, 50)}...`);
+            logger.info('[AI] Trying Waifu.pics for anime images...');
+            const waifuUrl = 'https://api.waifu.pics/sfw/waifu';
+            
+            const res = await axios.get(waifuUrl, { 
+                timeout: 10000,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            
+            if (res.data && res.data.url) {
+                // Download the actual image
+                const imgRes = await axios.get(res.data.url, { 
+                    responseType: 'arraybuffer',
+                    timeout: 15000,
+                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                });
+                
+                if (imgRes.data && imgRes.data.length > 1000) {
+                    logger.success('[AI] Anime image fetched from Waifu.pics');
+                    return Buffer.from(imgRes.data);
+                }
+            }
+        } catch (err) {
+            logger.warn(`[AI] Waifu.pics failed: ${err.message}`);
+        }
+        
+        // Fallback 1: Nekos.best API (anime images)
+        try {
+            logger.info('[AI] Trying Nekos.best as fallback...');
+            const nekosUrl = 'https://nekos.best/api/v2/neko';
+            
+            const res = await axios.get(nekosUrl, { 
+                timeout: 10000,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            
+            if (res.data && res.data.results && res.data.results[0] && res.data.results[0].url) {
+                const imgRes = await axios.get(res.data.results[0].url, { 
+                    responseType: 'arraybuffer',
+                    timeout: 15000,
+                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                });
+                
+                if (imgRes.data && imgRes.data.length > 1000) {
+                    logger.success('[AI] Anime image fetched from Nekos.best');
+                    return Buffer.from(imgRes.data);
+                }
+            }
+        } catch (err) {
+            logger.warn(`[AI] Nekos.best failed: ${err.message}`);
+        }
+        
+        // Fallback 2: Waifu.im API (high quality anime)
+        try {
+            logger.info('[AI] Trying Waifu.im as fallback...');
+            const waifuImUrl = 'https://api.waifu.im/search?included_tags=waifu&is_nsfw=false';
+            
+            const res = await axios.get(waifuImUrl, { 
+                timeout: 10000,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            
+            if (res.data && res.data.images && res.data.images[0] && res.data.images[0].url) {
+                const imgRes = await axios.get(res.data.images[0].url, { 
+                    responseType: 'arraybuffer',
+                    timeout: 15000,
+                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                });
+                
+                if (imgRes.data && imgRes.data.length > 1000) {
+                    logger.success('[AI] Anime image fetched from Waifu.im');
+                    return Buffer.from(imgRes.data);
+                }
+            }
+        } catch (err) {
+            logger.warn(`[AI] Waifu.im failed: ${err.message}`);
+        }
+        
+        // Fallback 3: Try Pollinations with anime prompt
+        try {
+            const animePrompt = 'anime waifu character aesthetic high quality isekai';
+            const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(animePrompt)}?width=1024&height=1024&nologo=true&model=flux&seed=${Math.floor(Math.random() * 999999)}`;
+            logger.info('[AI] Trying Pollinations with anime prompt...');
             
             const res = await axios.get(url, { 
                 responseType: 'arraybuffer', 
@@ -185,36 +293,14 @@ async function generateImage(prompt) {
             });
             
             if (res.data && res.data.length > 1000) {
-                logger.success('[AI] Image generated with Pollinations');
+                logger.success('[AI] Anime image generated with Pollinations');
                 return Buffer.from(res.data);
             }
         } catch (err) {
             logger.warn(`[AI] Pollinations failed: ${err.message}`);
         }
         
-        // Fallback to Hugging Face (free, no key needed)
-        try {
-            logger.info('[AI] Trying Hugging Face as fallback...');
-            const hfUrl = 'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0';
-            
-            const res = await axios.post(hfUrl, 
-                { inputs: cleanPrompt },
-                { 
-                    responseType: 'arraybuffer',
-                    timeout: 30000,
-                    headers: { 'Content-Type': 'application/json' }
-                }
-            );
-            
-            if (res.data && res.data.length > 1000) {
-                logger.success('[AI] Image generated with Hugging Face');
-                return Buffer.from(res.data);
-            }
-        } catch (hfErr) {
-            logger.warn(`[AI] Hugging Face failed: ${hfErr.message}`);
-        }
-        
-        throw new Error('All image generation services unavailable');
+        throw new Error('All anime image sources unavailable');
         
     } catch (err) {
         logger.error(`[AI] Image generation failed: ${err.message}`);
