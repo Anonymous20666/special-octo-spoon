@@ -255,17 +255,16 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
         const shouldRespond = isGroup && (isMentioned || isReplyToBot || (hasSticker && (isMentioned || isReplyToBot)));
         
         if (pappyOn && shouldRespond && !text.startsWith(globalPrefix)) {
-            // Show typing immediately (no await)
+            // Show typing (no await - fire and forget)
             sock.sendPresenceUpdate('composing', jid).catch(() => {});
-            
-            // Send "..." reaction immediately so user knows bot is responding
-            sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
-            try {
-                let response = '';
+            // Process async - don't block other messages
+            (async () => {
+                try {
+                    let response = '';
 
                 if (hasSticker && (isMentioned || isReplyToBot)) {
-                    // User sent sticker to bot - reply with TEXT + STICKER for aura farming
+                    // User sent sticker - reply with TEXT + STICKER for aura farming
                     
                     const stickerPrompts = [
                         'cool anime character with glowing aura aesthetic',
@@ -282,49 +281,44 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                     const quickTexts = ['🔥', '💯', 'W', 'valid', 'bet', '⚡', 'fire', 'legendary'];
                     const randomText = quickTexts[Math.floor(Math.random() * quickTexts.length)];
                     
-                    // Send text first (instant)
+                    // Send text first (instant, quoted for aura)
                     await sock.sendMessage(jid, { text: randomText }, { quoted: msg });
                     
                     const randomPrompt = stickerPrompts[Math.floor(Math.random() * stickerPrompts.length)];
                     const cacheKey = Buffer.from(randomPrompt).toString('base64').slice(0, 20);
                     
-                    // Try to send sticker (cached or new)
-                    try {
-                        let stickerBuffer;
-                        
-                        // Check cache first
-                        if (global.stickerCache.has(cacheKey)) {
-                            logger.info('[AI] Using cached sticker');
-                            stickerBuffer = global.stickerCache.get(cacheKey);
-                        } else {
-                            // Generate new with timeout
-                            logger.info(`[AI] Generating sticker: ${randomPrompt}`);
-                            const imgBuffer = await Promise.race([
-                                ai.generateImage(randomPrompt),
-                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
-                            ]);
+                    // Send sticker (async, don't block)
+                    (async () => {
+                        try {
+                            let stickerBuffer;
                             
-                            const sharp = require('sharp');
-                            stickerBuffer = await sharp(imgBuffer)
-                                .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-                                .webp({ quality: 90 })
-                                .toBuffer();
-                            
-                            // Cache it
-                            if (global.stickerCache.size >= 50) {
-                                const firstKey = global.stickerCache.keys().next().value;
-                                global.stickerCache.delete(firstKey);
+                            if (global.stickerCache.has(cacheKey)) {
+                                stickerBuffer = global.stickerCache.get(cacheKey);
+                            } else {
+                                const imgBuffer = await Promise.race([
+                                    ai.generateImage(randomPrompt),
+                                    new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
+                                ]);
+                                
+                                const sharp = require('sharp');
+                                stickerBuffer = await sharp(imgBuffer)
+                                    .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+                                    .webp({ quality: 90 })
+                                    .toBuffer();
+                                
+                                if (global.stickerCache.size >= 50) {
+                                    const firstKey = global.stickerCache.keys().next().value;
+                                    global.stickerCache.delete(firstKey);
+                                }
+                                global.stickerCache.set(cacheKey, stickerBuffer);
                             }
-                            global.stickerCache.set(cacheKey, stickerBuffer);
+                            
+                            await sock.sendMessage(jid, { sticker: stickerBuffer });
+                        } catch (err) {
+                            logger.error(`[AI] Sticker failed: ${err.message}`);
                         }
-                        
-                        // Send sticker WITHOUT quoting (to avoid old message issues)
-                        await sock.sendMessage(jid, { sticker: stickerBuffer });
-                        logger.success('[AI] Text + Sticker sent');
-                    } catch (stickerErr) {
-                        logger.error(`[AI] Sticker failed: ${stickerErr.message}`);
-                        // Text already sent, so we're good
-                    }
+                    })();
+                    
                     return;
                 } else if (hasImage) {
                     const imgBuffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: null, reuploadRequest: sock.updateMediaMessage });
@@ -414,14 +408,12 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                 }
 
                 await sock.sendMessage(jid, { text: response }, { quoted: msg });
-                
-                // Remove hourglass, add checkmark
-                sock.sendMessage(jid, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
             } catch (err) {
                 logger.warn(`[AI] Failed: ${err.message}`);
                 await sock.sendMessage(jid, { text: 'something went wrong, try again' }, { quoted: msg }).catch(() => {});
             }
+            })(); // End async IIFE
             return;
         }
 
