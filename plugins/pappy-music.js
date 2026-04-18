@@ -18,14 +18,14 @@ async function searchAndDownload(query) {
     const cookiesPath = path.join(__dirname, '../data/youtube_cookies.txt');
 
     try {
-        // Search YouTube and download best audio
-        const cmd = `yt-dlp --cookies "${cookiesPath}" --js-runtimes node -x --audio-format mp3 --audio-quality 0 --max-filesize 15m -o "${outPath}" "ytsearch1:${safeQuery}" --no-playlist --quiet`;
-        await execAsync(cmd, { timeout: 60000 });
+        // Fast download: skip metadata, use best audio only
+        const cmd = `yt-dlp --cookies "${cookiesPath}" --js-runtimes node -x --audio-format mp3 --audio-quality 5 --max-filesize 10m --no-playlist --no-warnings --no-check-certificate -o "${outPath}" "ytsearch1:${safeQuery}"`;
+        await execAsync(cmd, { timeout: 45000 }); // Reduced from 60s to 45s
 
         if (!fs.existsSync(outPath)) throw new Error('Download failed');
 
         const stats = fs.statSync(outPath);
-        if (stats.size > 15 * 1024 * 1024) throw new Error('File too large');
+        if (stats.size > 10 * 1024 * 1024) throw new Error('File too large');
 
         return outPath;
     } catch (err) {
