@@ -15,10 +15,11 @@ fs.mkdirSync(TEMP_DIR, { recursive: true });
 async function searchAndDownload(query) {
     const safeQuery = query.replace(/[^a-zA-Z0-9 ]/g, '').trim();
     const outPath   = path.join(TEMP_DIR, `music_${Date.now()}.mp3`);
+    const cookiesPath = path.join(__dirname, '../data/youtube_cookies.txt');
 
     try {
         // Search YouTube and download best audio
-        const cmd = `yt-dlp -x --audio-format mp3 --audio-quality 0 --max-filesize 15m -o "${outPath}" "ytsearch1:${safeQuery}" --no-playlist --quiet`;
+        const cmd = `yt-dlp --cookies "${cookiesPath}" --js-runtimes node -x --audio-format mp3 --audio-quality 0 --max-filesize 15m -o "${outPath}" "ytsearch1:${safeQuery}" --no-playlist --quiet`;
         await execAsync(cmd, { timeout: 60000 });
 
         if (!fs.existsSync(outPath)) throw new Error('Download failed');
@@ -34,9 +35,10 @@ async function searchAndDownload(query) {
 }
 
 async function getTrackInfo(query) {
+    const cookiesPath = path.join(__dirname, '../data/youtube_cookies.txt');
     try {
         const { stdout } = await execAsync(
-            `yt-dlp --dump-json --no-playlist "ytsearch1:${query.replace(/[^a-zA-Z0-9 ]/g, '')}" --quiet`,
+            `yt-dlp --cookies "${cookiesPath}" --js-runtimes node --dump-json --no-playlist "ytsearch1:${query.replace(/[^a-zA-Z0-9 ]/g, '')}" --quiet`,
             { timeout: 15000 }
         );
         const info = JSON.parse(stdout);

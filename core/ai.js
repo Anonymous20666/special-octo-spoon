@@ -338,7 +338,8 @@ async function searchVideo(query) {
     const execAsync = util.promisify(exec);
     const safeQuery = query.replace(/[^a-zA-Z0-9 ]/g, '').trim();
     const outPath = path.join(TEMP_DIR, `video_${Date.now()}.mp4`);
-    const cmd = `yt-dlp -f "best[ext=mp4][filesize<15M]/best[ext=mp4]" --max-filesize 15m -o "${outPath}" "ytsearch1:${safeQuery}" --no-playlist --quiet`;
+    const cookiesPath = path.join(__dirname, '../data/youtube_cookies.txt');
+    const cmd = `yt-dlp --cookies "${cookiesPath}" --js-runtimes node -f "best[ext=mp4][filesize<15M]/best[ext=mp4]" --max-filesize 15m -o "${outPath}" "ytsearch1:${safeQuery}" --no-playlist --quiet`;
     await execAsync(cmd, { timeout: 90000 });
     if (!fs.existsSync(outPath)) throw new Error('Video download failed');
     const buffer = await fs.promises.readFile(outPath);
