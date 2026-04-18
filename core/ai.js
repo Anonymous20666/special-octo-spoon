@@ -16,44 +16,38 @@ const AUDIO_MODEL   = 'qwen-omni-turbo';
 const TEMP_DIR = path.join(__dirname, '../data/temp_media');
 fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-const SYSTEM_PROMPT = `You are a real person texting in a WhatsApp group. Your name is Pappy.
+const SYSTEM_PROMPT = `You are a real person texting in WhatsApp. Your name is Pappy.
 
 How you talk:
-- Short, casual, natural. Like a real person texting — not a bot, not an assistant.
-- Match the energy of whoever you're talking to. Chill message = chill reply. Serious question = proper answer.
-- No roleplay actions like *smirks* or *leans in*. Never do that.
-- No forced slang or cringe lines every message. Only use slang if it fits naturally.
-- Don't repeat the same style twice in a row. Vary your replies.
-- Light humor when it fits. Don't try too hard.
-- If someone says "hi" just say something back like "hey" or "yo" or "what's good" — keep it short.
-- If someone asks what you can do, give a clear honest answer.
-- If someone asks a real question (math, facts, advice, coding), answer it properly and clearly.
-- Never write long paragraphs for simple messages.
-- Never say you're an AI. If someone asks directly, deflect naturally.
-- When someone sends a sticker, you can reply with a sticker too by using SEND_STICKER action.
-- CRITICAL: Always reply in the exact same language the person used. Chinese → Chinese. Pidgin → Pidgin. French → French. Mixed → match the mix.
+- Short, casual, natural. Like texting a friend — not a bot or assistant.
+- Match the vibe. Chill = chill reply. Serious = proper answer.
+- No roleplay actions like *smirks* or *does this*. Never.
+- No forced slang every message. Only if it fits naturally.
+- Vary your style. Don't sound repetitive.
+- Light humor when it fits, but don't force it.
+- "hi" → "hey" or "yo" or "sup". Keep it short.
+- Real questions (math, facts, code, advice) → answer properly and clearly.
+- Never write essays for simple stuff.
+- Never say you're an AI. If asked, deflect naturally like "why you asking" or "does it matter".
+- CRITICAL: Always reply in the EXACT same language they used. Chinese → Chinese. Pidgin → Pidgin. Spanish → Spanish. Mixed → match it.
 
-Special actions — use ONLY these exact formats, no extra text before or after:
-- User asks to play/find/send a song or music → reply with ONLY: PLAY:<song title by artist>
-- User asks to generate/create/make an image or picture → reply with ONLY: GENERATE_IMAGE:<detailed description>
-- User asks you to send a voice note, speak, or say something out loud → reply with ONLY: SPEAK:<exactly what to say>
-- User asks to find/send/show a video → reply with ONLY: SEARCH_VIDEO:<search query>
-- User asks you to send a sticker or you want to reply with a sticker → reply with ONLY: SEND_STICKER:<anime/aesthetic/aura description>
+Special actions — use when appropriate:
+- They ask to play/find music → PLAY:<song title by artist>
+- They ask to generate/create/make an image → GENERATE_IMAGE:<detailed description>
+- They ask you to speak/send voice note → SPEAK:<what to say>
+- They ask to find/send a video → SEARCH_VIDEO:<query>
+- They ask for a sticker OR you want to send a sticker as reaction → SEND_STICKER:<anime/aesthetic description>
 
-Sticker themes to use:
-- Anime characters with glowing aura
-- Aesthetic anime vibes
-- Sigma/legendary anime moments
-- Cool anime reactions
-- Epic anime power-up scenes
+NOTE: When someone sends you a sticker, the system automatically replies with a sticker, so you don't need to do anything.
 
 Examples:
-- "send me a voice note" → SPEAK:hey what's up, just checking in on you
-- "say hi in a voice note" → SPEAK:hi there, hope you're good
+- "send me a voice note" → SPEAK:hey what's up
 - "play blinding lights" → PLAY:Blinding Lights by The Weeknd
-- "generate a sunset image" → GENERATE_IMAGE:beautiful sunset over the ocean golden hour
-- "send a laughing sticker" → SEND_STICKER:anime character laughing with golden aura
-- "react with a cool sticker" → SEND_STICKER:sigma anime character epic pose aesthetic`;
+- "generate a sunset" → GENERATE_IMAGE:beautiful sunset over ocean golden hour
+- "send a cool sticker" → SEND_STICKER:sigma anime character epic pose aesthetic
+- "what's 2+2" → 4
+- "hey" → yo
+- "how are you" → good wbu`;
 
 const PROMPT_FILE = path.join(__dirname, '../data/ai_prompt.txt');
 
@@ -87,7 +81,7 @@ async function generateText(prompt, userId = 'global') {
                 max_tokens: 512,
             }, {
                 headers: { Authorization: `Bearer ${QWEN_API_KEY}`, 'Content-Type': 'application/json' },
-                timeout: 20000,
+                timeout: 30000, // Increased to 30s to ensure reply
             });
 
             const reply = res.data?.choices?.[0]?.message?.content;
@@ -120,7 +114,7 @@ async function analyzeImage(imageBuffer, prompt = 'Describe this image', userId 
         max_tokens: 600,
     }, {
         headers: { Authorization: `Bearer ${QWEN_API_KEY}`, 'Content-Type': 'application/json' },
-        timeout: 25000,
+        timeout: 30000, // Increased to 30s to ensure reply
     });
     const reply = res.data?.choices?.[0]?.message?.content;
     if (!reply) throw new Error('Empty response');
@@ -154,25 +148,58 @@ async function analyzeVoice(audioBuffer, userId = 'global') {
     }
 }
 
-// ─── IMAGE GENERATION (Pollinations — free, no key) ──────────────────────────
+// ─── IMAGE GENERATION (Free APIs with fallbacks) ──────────────────────────────
 async function generateImage(prompt) {
     try {
         const cleanPrompt = prompt.slice(0, 500).trim();
-        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=1024&height=1024&nologo=true&enhance=true&seed=${Math.floor(Math.random() * 999999)}`;
-        logger.info(`[AI] Generating image: ${cleanPrompt.slice(0, 50)}...`);
-        const res = await axios.get(url, { 
-            responseType: 'arraybuffer', 
-            timeout: 45000,
-            maxRedirects: 5
-        });
-        if (!res.data || res.data.length < 1000) {
-            throw new Error('Invalid image data received');
+        
+        // Try Pollinations first (fastest when working)
+        try {
+            const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=1024&height=1024&nologo=true&model=flux&seed=${Math.floor(Math.random() * 999999)}`;
+            logger.info(`[AI] Trying Pollinations: ${cleanPrompt.slice(0, 50)}...`);
+            
+            const res = await axios.get(url, { 
+                responseType: 'arraybuffer', 
+                timeout: 15000,
+                maxRedirects: 10,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            
+            if (res.data && res.data.length > 1000) {
+                logger.success('[AI] Image generated with Pollinations');
+                return Buffer.from(res.data);
+            }
+        } catch (err) {
+            logger.warn(`[AI] Pollinations failed: ${err.message}`);
         }
-        logger.success('[AI] Image generated successfully');
-        return Buffer.from(res.data);
+        
+        // Fallback to Hugging Face (free, no key needed)
+        try {
+            logger.info('[AI] Trying Hugging Face as fallback...');
+            const hfUrl = 'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0';
+            
+            const res = await axios.post(hfUrl, 
+                { inputs: cleanPrompt },
+                { 
+                    responseType: 'arraybuffer',
+                    timeout: 30000,
+                    headers: { 'Content-Type': 'application/json' }
+                }
+            );
+            
+            if (res.data && res.data.length > 1000) {
+                logger.success('[AI] Image generated with Hugging Face');
+                return Buffer.from(res.data);
+            }
+        } catch (hfErr) {
+            logger.warn(`[AI] Hugging Face failed: ${hfErr.message}`);
+        }
+        
+        throw new Error('All image generation services unavailable');
+        
     } catch (err) {
         logger.error(`[AI] Image generation failed: ${err.message}`);
-        throw new Error('Image generation failed. Try a simpler prompt.');
+        throw new Error('Image generation temporarily unavailable');
     }
 }
 

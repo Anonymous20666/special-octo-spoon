@@ -28,6 +28,10 @@ global.waSocks = activeSockets;
 let botState = { isSleeping: false, pappyMode: {} };
 if (!global.messageCache) global.messageCache = new Map();
 if (!global._aiReplyCache) global._aiReplyCache = new Map();
+if (!global.stickerCache) global.stickerCache = new Map(); // Cache generated stickers
+
+const STICKER_CACHE_DIR = path.join(__dirname, '../data/sticker_cache');
+if (!fs.existsSync(STICKER_CACHE_DIR)) fs.mkdirSync(STICKER_CACHE_DIR, { recursive: true });
 
 if (!fs.existsSync(SESSIONS_PATH)) fs.mkdirSync(SESSIONS_PATH, { recursive: true });
 if (!fs.existsSync(path.join(__dirname, '../data'))) fs.mkdirSync(path.join(__dirname, '../data'));
@@ -247,53 +251,81 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
         const hasSticker        = !!(msg.message?.stickerMessage);
         const pappyOn           = botState.pappyMode?.[jid] === true;
 
-        if (pappyOn && (isMentioned || isReplyToBot || !isGroup || hasSticker) && !text.startsWith(globalPrefix)) {
-            const lastReply = global._aiReplyCache.get(sender) || 0;
-            if (Date.now() - lastReply < 3000) return;
-            global._aiReplyCache.set(sender, Date.now());
-
+        // AI only responds when: mentioned or replied to in groups (NEVER in DMs to avoid bans)
+        const shouldRespond = isGroup && (isMentioned || isReplyToBot || (hasSticker && (isMentioned || isReplyToBot)));
+        
+        if (pappyOn && shouldRespond && !text.startsWith(globalPrefix)) {
+            // Show typing immediately (no await)
             sock.sendPresenceUpdate('composing', jid).catch(() => {});
+            
+            // Send "..." reaction immediately so user knows bot is responding
+            sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
             try {
                 let response = '';
 
-                if (hasSticker) {
-                    // User sent a sticker, reply with a sticker
-                    sock.sendPresenceUpdate('composing', jid).catch(() => {});
+                if (hasSticker && (isMentioned || isReplyToBot)) {
+                    // User sent sticker to bot - reply with TEXT + STICKER for aura farming
                     
+                    const stickerPrompts = [
+                        'cool anime character with glowing aura aesthetic',
+                        'powerful anime warrior energy aura',
+                        'aesthetic anime character epic vibe',
+                        'anime character legendary pose glowing',
+                        'sigma anime character energy aesthetic',
+                        'anime protagonist power up aura glowing',
+                        'epic anime power up scene glowing energy',
+                        'legendary anime character aesthetic pose',
+                        'anime character with cosmic aura background'
+                    ];
+                    
+                    const quickTexts = ['🔥', '💯', 'W', 'valid', 'bet', '⚡', 'fire', 'legendary'];
+                    const randomText = quickTexts[Math.floor(Math.random() * quickTexts.length)];
+                    
+                    // Send text first (instant)
+                    await sock.sendMessage(jid, { text: randomText }, { quoted: msg });
+                    
+                    const randomPrompt = stickerPrompts[Math.floor(Math.random() * stickerPrompts.length)];
+                    const cacheKey = Buffer.from(randomPrompt).toString('base64').slice(0, 20);
+                    
+                    // Try to send sticker (cached or new)
                     try {
-                        // Generate anime/aura sticker
-                        const stickerPrompts = [
-                            'cool anime character with glowing aura aesthetic',
-                            'powerful anime warrior energy aura glowing',
-                            'aesthetic anime character vibe',
-                            'anime character epic pose glowing energy',
-                            'legendary anime aura moment aesthetic',
-                            'anime character drip aesthetic glow',
-                            'sigma anime character energy aura',
-                            'anime protagonist power up glowing aura'
-                        ];
+                        let stickerBuffer;
                         
-                        const randomPrompt = stickerPrompts[Math.floor(Math.random() * stickerPrompts.length)];
+                        // Check cache first
+                        if (global.stickerCache.has(cacheKey)) {
+                            logger.info('[AI] Using cached sticker');
+                            stickerBuffer = global.stickerCache.get(cacheKey);
+                        } else {
+                            // Generate new with timeout
+                            logger.info(`[AI] Generating sticker: ${randomPrompt}`);
+                            const imgBuffer = await Promise.race([
+                                ai.generateImage(randomPrompt),
+                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
+                            ]);
+                            
+                            const sharp = require('sharp');
+                            stickerBuffer = await sharp(imgBuffer)
+                                .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+                                .webp({ quality: 90 })
+                                .toBuffer();
+                            
+                            // Cache it
+                            if (global.stickerCache.size >= 50) {
+                                const firstKey = global.stickerCache.keys().next().value;
+                                global.stickerCache.delete(firstKey);
+                            }
+                            global.stickerCache.set(cacheKey, stickerBuffer);
+                        }
                         
-                        logger.info(`[AI] Generating sticker: ${randomPrompt}`);
-                        const imgBuffer = await ai.generateImage(randomPrompt);
-                        
-                        // Convert to sticker using sharp (faster than ffmpeg)
-                        const sharp = require('sharp');
-                        const stickerBuffer = await sharp(imgBuffer)
-                            .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-                            .webp({ quality: 90 })
-                            .toBuffer();
-                        
-                        await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
-                        logger.success('[AI] Sticker sent successfully');
-                        return;
+                        // Send sticker WITHOUT quoting (to avoid old message issues)
+                        await sock.sendMessage(jid, { sticker: stickerBuffer });
+                        logger.success('[AI] Text + Sticker sent');
                     } catch (stickerErr) {
-                        logger.error(`[AI] Sticker reply failed: ${stickerErr.message}`);
-                        await sock.sendMessage(jid, { text: "couldn't create that sticker rn" }, { quoted: msg });
-                        return;
+                        logger.error(`[AI] Sticker failed: ${stickerErr.message}`);
+                        // Text already sent, so we're good
                     }
+                    return;
                 } else if (hasImage) {
                     const imgBuffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: null, reuploadRequest: sock.updateMediaMessage });
                     const prompt = text.replace(/@\d+/g, '').trim() || 'Describe this image';
@@ -342,26 +374,49 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                 if (response.startsWith('SEND_STICKER:')) {
                     try {
                         const description = response.slice(13).trim();
-                        logger.info(`[AI] Generating sticker: ${description}`);
-                        const imgBuffer = await ai.generateImage(description);
+                        const cacheKey = Buffer.from(description).toString('base64').slice(0, 20);
                         
-                        // Convert to sticker using sharp (faster)
-                        const sharp = require('sharp');
-                        const stickerBuffer = await sharp(imgBuffer)
-                            .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-                            .webp({ quality: 90 })
-                            .toBuffer();
+                        let stickerBuffer;
                         
-                        await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
-                        logger.success('[AI] Sticker sent successfully');
+                        // Check cache first
+                        if (global.stickerCache.has(cacheKey)) {
+                            logger.info('[AI] Using cached sticker');
+                            stickerBuffer = global.stickerCache.get(cacheKey);
+                        } else {
+                            logger.info(`[AI] Generating sticker: ${description}`);
+                            const imgBuffer = await Promise.race([
+                                ai.generateImage(description),
+                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
+                            ]);
+                            
+                            const sharp = require('sharp');
+                            stickerBuffer = await sharp(imgBuffer)
+                                .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+                                .webp({ quality: 90 })
+                                .toBuffer();
+                            
+                            // Cache it
+                            if (global.stickerCache.size >= 50) {
+                                const firstKey = global.stickerCache.keys().next().value;
+                                global.stickerCache.delete(firstKey);
+                            }
+                            global.stickerCache.set(cacheKey, stickerBuffer);
+                        }
+                        
+                        // Send without quoting to avoid old message issues
+                        await sock.sendMessage(jid, { sticker: stickerBuffer });
+                        logger.success('[AI] Sticker sent & cached');
                     } catch (err) {
-                        logger.error(`[AI] Sticker generation failed: ${err.message}`);
-                        await sock.sendMessage(jid, { text: "couldn't create that sticker" }, { quoted: msg });
+                        logger.error(`[AI] Sticker failed: ${err.message}`);
+                        await sock.sendMessage(jid, { text: "couldn't make that sticker rn" }, { quoted: msg });
                     }
                     return;
                 }
 
                 await sock.sendMessage(jid, { text: response }, { quoted: msg });
+                
+                // Remove hourglass, add checkmark
+                sock.sendMessage(jid, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
             } catch (err) {
                 logger.warn(`[AI] Failed: ${err.message}`);

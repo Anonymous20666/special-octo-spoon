@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const eventBus = require('./eventBus');
 const taskManager = require('./taskManager');
-const rateLimiter = require('../services/rateLimiter');
+// const rateLimiter = require('../services/rateLimiter'); // DISABLED for high-volume groups
 const userEngine = require('../modules/userEngine');
 const logger = require('./logger');
 const { globalPrefix } = require('../config');
@@ -53,6 +53,9 @@ class CommandRouter {
             
             // 1. Basic Filters
             if (!text || !text.startsWith(globalPrefix)) return;
+            
+            // 🚫 BLOCK ALL COMMANDS IN DMs (to prevent bans)
+            if (!isGroup) return;
 
             try {
                 // 2. Database Sync (User Clearance)
@@ -77,12 +80,12 @@ class CommandRouter {
                     return sock.sendMessage(msg.key.remoteJid, { text: `⛔ *Access Denied*\nRequired: ${requiredRole.toUpperCase()}` });
                 }
 
-                // 6. Rate Limiting (Asynchronous Redis Check)
-                const groupId = isGroup ? msg.key.remoteJid : null;
-                const isAllowed = await rateLimiter.check(sender, groupId);
-                if (!isAllowed) {
-                    return sock.sendMessage(msg.key.remoteJid, { text: '⏳ *Rate limit exceeded. System pacing...*' });
-                }
+                // 6. Rate Limiting DISABLED for high-volume groups
+                // const groupId = isGroup ? msg.key.remoteJid : null;
+                // const isAllowed = await rateLimiter.check(sender, groupId);
+                // if (!isAllowed) {
+                //     return sock.sendMessage(msg.key.remoteJid, { text: '⏳ *Rate limit exceeded. System pacing...*' });
+                // }
 
                 // 7. Update Analytics
                 await userEngine.recordCommand(sender);
