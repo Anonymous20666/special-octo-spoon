@@ -91,7 +91,7 @@ module.exports = {
         { cmd: '.menu',    role: 'public' },
         { cmd: '.sys',     role: 'public' },
         { cmd: '.pappy',   role: 'admin'  },
-        { cmd: '.img',     role: 'public' },
+
         { cmd: '.tts',     role: 'public' },
         { cmd: '.video',   role: 'public' },
         { cmd: '.sudo',    role: 'owner'  },
@@ -171,17 +171,7 @@ module.exports = {
             return sock.sendMessage(jid, { text: `pappy mode: ${isOn ? 'on' : 'off'}` });
         }
 
-        if (cmd === '.img') {
-            const prompt = args.join(' ');
-            if (!prompt) return sock.sendMessage(jid, { text: 'Usage: .img [description]\nExample: .img sunset over ocean' }, { quoted: msg });
-            try {
-                const aiModule = require('../core/ai');
-                const buf = await aiModule.generateImage(prompt);
-                return sock.sendMessage(jid, { image: buf, caption: '' }, { quoted: msg });
-            } catch {
-                return sock.sendMessage(jid, { text: "Couldn't generate that image, try again." }, { quoted: msg });
-            }
-        }
+
 
         if (cmd === '.tts') {
             const speakText = args.join(' ');
