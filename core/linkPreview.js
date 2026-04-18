@@ -64,26 +64,73 @@ function getPlatformPreview(url) {
 // ─── FETCH BUFFER (fallback only) ────
 async function fetchThumbnailBuffer(imageUrl) {
     try {
+        if (!imageUrl || !imageUrl.startsWith('http')) return null;
+        
         const res = await axios.get(imageUrl, {
             responseType: 'arraybuffer',
-            timeout: 5000,
-            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 8000,
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/*'
+            },
+            maxRedirects: 5
         });
         return Buffer.from(res.data);
+    } catch (err) {
+        logger.warn(`[LinkPreview] Failed to fetch thumbnail: ${imageUrl}`);
+        return null;
+    }
+}
+
+// ─── FETCH WHATSAPP GROUP INFO ────────
+async function fetchWhatsAppGroupInfo(inviteUrl) {
+    try {
+        const inviteCode = inviteUrl.split('chat.whatsapp.com/')[1]?.split('?')[0];
+        if (!inviteCode) return null;
+
+        if (global.waSocks && global.waSocks.size > 0) {
+            const sock = global.waSocks.values().next().value;
+            if (sock && sock.groupGetInviteInfo) {
+                try {
+                    const groupInfo = await sock.groupGetInviteInfo(inviteCode);
+                    if (groupInfo) {
+                        let thumbnail = null;
+                        
+                        if (groupInfo.id) {
+                            try {
+                                const ppUrl = await sock.profilePictureUrl(groupInfo.id, 'image');
+                                if (ppUrl) thumbnail = await fetchThumbnailBuffer(ppUrl);
+                            } catch {}
+                        }
+                        
+                        return {
+                            title: groupInfo.subject || 'WhatsApp Group',
+                            description: groupInfo.desc || `${groupInfo.size || 0} members`,
+                            thumbnail: thumbnail
+                        };
+                    }
+                } catch (err) {
+                    logger.warn(`[LinkPreview] Failed to fetch WA group info: ${err.message}`);
+                }
+            }
+        }
+        
+        return null;
     } catch {
         return null;
     }
 }
 
 // ─── CORE ────────────────────────────
-async function buildLinkPreview(text) {
+async function buildLinkPreview(text, forGroupStatus = false) {
     const urls = extractUrls(text);
     if (!urls.length) return null;
 
     const url = urls[0];
 
     // ─── CACHE ───────────────────────
-    const cached = previewCache.get(url);
+    const cacheKey = forGroupStatus ? `${url}_gs` : url;
+    const cached = previewCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
         return cached.data;
     }
@@ -91,19 +138,32 @@ async function buildLinkPreview(text) {
     // ─── 🎯 PLATFORM PREVIEW FIRST ───
     const platformPreview = getPlatformPreview(url);
     if (platformPreview) {
-        const result = {
-            externalAdReply: {
+        let result;
+        
+        if (forGroupStatus) {
+            // Group Status format
+            result = {
+                url: url,
                 title: platformPreview.title,
-                body: platformPreview.body,
-                mediaType: 1,
-                sourceUrl: url,
-                thumbnailUrl: platformPreview.thumbnailUrl,
-                renderLargerThumbnail: true,
-                showAdAttribution: false,
-            }
-        };
+                description: platformPreview.body,
+                thumbnail: await fetchThumbnailBuffer(platformPreview.thumbnailUrl)
+            };
+        } else {
+            // Normal message format - use thumbnailUrl for clickable link
+            result = {
+                externalAdReply: {
+                    title: platformPreview.title,
+                    body: platformPreview.body,
+                    mediaType: 1,
+                    sourceUrl: url,
+                    thumbnailUrl: platformPreview.thumbnailUrl,
+                    renderLargerThumbnail: true,
+                    showAdAttribution: false,
+                }
+            };
+        }
 
-        previewCache.set(url, { data: result, timestamp: Date.now() });
+        previewCache.set(cacheKey, { data: result, timestamp: Date.now() });
         return result;
     }
 
@@ -125,17 +185,34 @@ async function buildLinkPreview(text) {
 
     // ─── 🔥 WHATSAPP GROUP FIX ───────
     if (!preview && isWAGroup) {
-        result = {
-            externalAdReply: {
-                title: "WhatsApp Group Invite",
-                body: "Tap to join the group 💬",
-                mediaType: 1,
-                sourceUrl: url,
-                thumbnailUrl: "https://i.imgur.com/4ZQZ4ZQ.jpeg",
-                renderLargerThumbnail: true,
-                showAdAttribution: false,
+        // Try to fetch actual group info
+        const groupInfo = await fetchWhatsAppGroupInfo(url);
+        
+        if (forGroupStatus) {
+            result = {
+                url: url,
+                title: groupInfo?.title || "WhatsApp Group",
+                description: groupInfo?.description || "Tap to join 💬",
+                thumbnail: groupInfo?.thumbnail || null
+            };
+        } else {
+            // For normal messages, use thumbnailUrl if we have it
+            let thumbnailUrl = null;
+            if (groupInfo?.thumbnail) {
+                // We have buffer, but for clickable link we skip thumbnail
+                thumbnailUrl = undefined;
             }
-        };
+            result = {
+                externalAdReply: {
+                    title: groupInfo?.title || "WhatsApp Group Invite",
+                    body: groupInfo?.description || "Tap to join the group 💬",
+                    mediaType: 1,
+                    sourceUrl: url,
+                    renderLargerThumbnail: false,
+                    showAdAttribution: false,
+                }
+            };
+        }
     }
 
     // ─── NORMAL LINKS ────────────────
@@ -143,33 +220,46 @@ async function buildLinkPreview(text) {
         const thumbnailUrl =
             preview.images?.[0] ||
             preview.favicons?.[0] ||
-            "https://i.imgur.com/4ZQZ4ZQ.jpeg";
+            null;
 
         let jpegThumbnail = null;
 
-        if (!thumbnailUrl.startsWith('http')) {
+        // Only fetch buffer for group status
+        if (forGroupStatus && thumbnailUrl && thumbnailUrl.startsWith('http')) {
             jpegThumbnail = await fetchThumbnailBuffer(thumbnailUrl);
         }
 
-        result = {
-            externalAdReply: {
+        if (forGroupStatus) {
+            // Group Status format
+            result = {
+                url: url,
                 title: preview.title || preview.siteName || 'Link Preview',
-                body: preview.description || '',
-                mediaType: 1,
-                sourceUrl: url,
-                thumbnailUrl: thumbnailUrl, // 🔥 primary
-                thumbnail: jpegThumbnail || undefined, // fallback
-                renderLargerThumbnail: true,
-                showAdAttribution: false,
-            }
-        };
+                description: preview.description || '',
+                thumbnail: jpegThumbnail
+            };
+        } else {
+            // Normal message format - use thumbnailUrl for clickable link
+            result = {
+                externalAdReply: {
+                    title: preview.title || preview.siteName || 'Link Preview',
+                    body: preview.description || '',
+                    mediaType: 1,
+                    sourceUrl: url,
+                    thumbnailUrl: thumbnailUrl || undefined,
+                    renderLargerThumbnail: !!thumbnailUrl,
+                    showAdAttribution: false,
+                }
+            };
+        }
     }
 
     // ─── CACHE ───────────────────────
-    previewCache.set(url, {
-        data: result,
-        timestamp: Date.now()
-    });
+    if (result) {
+        previewCache.set(cacheKey, {
+            data: result,
+            timestamp: Date.now()
+        });
+    }
 
     return result;
 }

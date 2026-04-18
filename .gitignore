@@ -1,0 +1,9 @@
+node_modules/
+.env
+data/sessions/
+data/logs/
+data/temp_media/
+data/*.json
+*.log
+.DS_Store
+package-lock.json

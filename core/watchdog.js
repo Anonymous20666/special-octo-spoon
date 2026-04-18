@@ -18,20 +18,11 @@ class SmartWatchdog {
 
         const monitor = {
             lastSeen: Date.now(),
-            interval: setInterval(() => this._check(botId, sock, restartCallback), 30000)
+            interval: setInterval(() => this._check(botId, sock, restartCallback), 30000) 
         };
 
         this.monitors.set(botId, monitor);
         sock.ws.on('message', () => this.update(botId));
-    }
-
-    detach(botId) {
-        const monitor = this.monitors.get(botId);
-        if (monitor) {
-            clearInterval(monitor.interval);
-            this.monitors.delete(botId);
-            logger.info(`[WATCHDOG] Detached monitor for ${botId} (session purged).`);
-        }
     }
 
     update(botId) {
@@ -44,9 +35,9 @@ class SmartWatchdog {
         if (!monitor) return;
 
         const idleTime = Date.now() - monitor.lastSeen;
-
+        
         if (idleTime > (this.timeoutMs / 2)) {
-            try { sock.ws.ping(); }
+            try { sock.ws.ping(); } 
             catch (e) { logger.warn(`[WATCHDOG] Failed to ping socket for ${botId}.`); }
         }
 
@@ -54,16 +45,6 @@ class SmartWatchdog {
             logger.error(`🚨 [WATCHDOG] Zombie connection detected for ${botId}. Force restarting...`);
             clearInterval(monitor.interval);
             this.monitors.delete(botId);
-            // Guard: only restart if session folder still exists on disk
-            const path = require('path');
-            const fs   = require('fs');
-            const sessionsPath = path.join(__dirname, '../data/sessions');
-            const hasSessions  = fs.existsSync(sessionsPath) &&
-                fs.readdirSync(sessionsPath).some(f => f.includes(botId));
-            if (!hasSessions) {
-                logger.warn(`[WATCHDOG] No session found for ${botId} — skipping restart.`);
-                return;
-            }
             restartCallback();
         }
     }

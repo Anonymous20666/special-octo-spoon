@@ -58,12 +58,15 @@ module.exports = {
     },
 
     // 🧠 SaaS Fix: Updated signature to match the object destructuring in our Command Router
-    execute: async ({ sock, msg, text }) => {
+    execute: async ({ sock, msg, args, text, user, botId }) => {
         const chat = msg.key.remoteJid;
-        const commandName = text.split(' ')[0].toLowerCase();
-        const botId = sock.user?.id?.split(':')[0] || 'Unknown Node';
+        const cmd = text.split(' ')[0].toLowerCase();
+        const botNumber = sock.user?.id?.split(':')[0] || 'Unknown Node';
 
-        if (commandName === '.radar') {
+        logger.info(`[Radar] Command received: ${cmd}`);
+
+        if (cmd === '.radars') {
+            logger.info(`[Radar] Executing .radars command`);
             await sock.sendMessage(chat, { 
                 text: "📡 *SCANNING SECTORS...*\n_Transmitting data securely to your Telegram._" 
             });
@@ -72,19 +75,22 @@ module.exports = {
                 const groups = await sock.groupFetchAllParticipating();
                 const jids = Object.keys(groups);
                 
+                logger.info(`[Radar] Found ${jids.length} groups`);
+                
                 if (global.tgBot) {
-                    let radarMsg = `📡 <b>OMEGA RADAR: MANUAL DUMP [+${botId}]</b>\n\nMonitoring <b>${jids.length}</b> sectors:\n\n`;
+                    let radarMsg = `📡 <b>OMEGA RADAR: MANUAL DUMP [+${botNumber}]</b>\n\nMonitoring <b>${jids.length}</b> sectors:\n\n`;
                     for (const jid of jids) {
                         radarMsg += `📁 <b>${groups[jid].subject || "Unknown"}</b>\n🆔 <code>${jid}</code>\n\n`;
                     }
                     
-                    // Safe chunking with delays
                     const chunks = radarMsg.match(/[\s\S]{1,4000}/g) || [];
                     for (const chunk of chunks) {
                         await global.tgBot.telegram.sendMessage(ownerTelegramId, chunk, { parse_mode: 'HTML' }).catch(()=>{});
-                        await delay(1000); // 1-second delay
+                        await delay(1000);
                     }
+                    await sock.sendMessage(chat, { text: "✅ Radar data transmitted to Telegram." });
                 } else {
+                    logger.warn(`[Radar] Telegram bot not available`);
                     return sock.sendMessage(chat, { text: "❌ Telegram Control Panel is currently offline." });
                 }
             } catch (err) { 

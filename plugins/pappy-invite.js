@@ -115,18 +115,13 @@ module.exports = {
             const creator = groupInfo?.owner ? `+${groupInfo.owner.split('@')[0]}` : 'Hidden';
             const desc = groupInfo?.desc || preview?.externalAdReply?.body || 'No description provided.';
 
-            // 3. Try to grab the group's profile picture directly
-            let pfpBuffer = null;
+            // 3. Try to grab the group's profile picture URL (not buffer)
+            let pfpUrl = null;
             if (groupInfo) {
                 try {
-                    const pfpUrl = await sock.profilePictureUrl(groupInfo.id, 'image');
-                    if (pfpUrl) {
-                        // 🧠 SaaS Fix: Strict timeout so a broken WhatsApp image server doesn't crash the bot
-                        const res = await axios.get(pfpUrl, { responseType: 'arraybuffer', timeout: 5000 });
-                        pfpBuffer = Buffer.from(res.data, 'binary');
-                    }
+                    pfpUrl = await sock.profilePictureUrl(groupInfo.id, 'image');
                 } catch (e) {
-                    logger.warn(`[InviteCard] Failed to fetch PFP for ${groupName}`);
+                    logger.warn(`[InviteCard] Failed to fetch PFP URL for ${groupName}`);
                 }
             }
 
@@ -141,12 +136,12 @@ module.exports = {
                 mediaType: 1,
                 sourceUrl: fullLink,
                 renderLargerThumbnail: true,
-                showAdAttribution: false
+                showAdAttribution: true
             };
 
-            // 🔥 Override with native high-res PFP if we secured it!
-            if (pfpBuffer) {
-                adReply.thumbnail = pfpBuffer;
+            // Use thumbnailUrl instead of buffer for clickable link
+            if (pfpUrl) {
+                adReply.thumbnailUrl = pfpUrl;
             }
 
             // 6. Delete the "Scanning..." message
@@ -158,9 +153,7 @@ module.exports = {
             await sock.sendMessage(jid, { 
                 text: aestheticCaption,
                 contextInfo: {
-                    externalAdReply: adReply,
-                    isForwarded: true,       
-                    forwardingScore: 999     
+                    externalAdReply: adReply
                 }
             });
 

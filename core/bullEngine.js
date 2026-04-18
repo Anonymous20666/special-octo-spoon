@@ -52,19 +52,53 @@ const broadcastWorker = new Worker(UNIQUE_QUEUE_NAME, async (job) => {
 
     // ─── 1. 👻 GHOST PROTOCOL ─────────────────
     if (useGhostProtocol) {
-        try {
-            const ghost = await withTimeout(sock.sendMessage(targetJid, { text: '\u200B\u200E' }), 10000);
-            await delay(500);
-            if (ghost?.key) await withTimeout(sock.sendMessage(targetJid, { delete: ghost.key }), 10000);
-            await delay(1000);
-        } catch {}
+        let ghostSuccess = false;
+        let retries = 0;
+        const maxRetries = 3;
+
+        while (!ghostSuccess && retries < maxRetries) {
+            try {
+                // Send ghost message and wait for confirmation
+                const ghost = await withTimeout(sock.sendMessage(targetJid, { text: '\u200B\u200E' }), 15000);
+                
+                if (!ghost?.key) {
+                    throw new Error('Ghost message key not received');
+                }
+                
+                // Wait longer to ensure message is delivered to WhatsApp servers
+                await delay(1500);
+                
+                // Delete the ghost message
+                await withTimeout(sock.sendMessage(targetJid, { delete: ghost.key }), 15000);
+                
+                // Wait to ensure deletion is processed
+                await delay(2000);
+                
+                ghostSuccess = true;
+                logger.info(`👻 Ghost protocol succeeded for ${targetJid}`);
+                
+            } catch (ghostErr) {
+                retries++;
+                logger.warn(`👻 Ghost protocol attempt ${retries}/${maxRetries} failed for ${targetJid}: ${ghostErr.message}`);
+                
+                if (retries < maxRetries) {
+                    await delay(2000); // Wait before retry
+                } else {
+                    // If all retries fail, throw error to prevent posting without session warmup
+                    throw new Error(`Ghost protocol failed after ${maxRetries} attempts - session not warmed up`);
+                }
+            }
+        }
     }
 
     const mutatedText = stealth.mutateMessage ? stealth.mutateMessage(textContent) : textContent;
 
     // ─── 2. FETCH NATIVE LINK METADATA ────────
     let previewContext = null;
-    if (!mediaPath) previewContext = await buildLinkPreview(mutatedText);
+    if (!mediaPath) {
+        const isGroupStatus = mode === 'advanced_status';
+        previewContext = await buildLinkPreview(mutatedText, isGroupStatus);
+    }
 
     try {
         let payload = {};
@@ -87,12 +121,12 @@ const broadcastWorker = new Worker(UNIQUE_QUEUE_NAME, async (job) => {
             };
 
             // Inject the Native Link Preview directly into the status bubble!
-            if (previewContext && previewContext.native) {
-                statusObj.matchedText = previewContext.native.url;
-                statusObj.canonicalUrl = previewContext.native.url;
-                statusObj.title = previewContext.native.title;
-                statusObj.description = previewContext.native.description;
-                if (previewContext.native.thumbnail) statusObj.jpegThumbnail = previewContext.native.thumbnail;
+            if (previewContext) {
+                statusObj.matchedText = previewContext.url;
+                statusObj.canonicalUrl = previewContext.url;
+                statusObj.title = previewContext.title;
+                statusObj.description = previewContext.description;
+                if (previewContext.thumbnail) statusObj.jpegThumbnail = previewContext.thumbnail;
                 statusObj.previewType = 0;
             }
 
@@ -103,12 +137,8 @@ const broadcastWorker = new Worker(UNIQUE_QUEUE_NAME, async (job) => {
         else {
             payload = { text: mutatedText };
             
-            if (previewContext && previewContext.native) {
-                payload.matchedText = previewContext.native.url;
-                payload.canonicalUrl = previewContext.native.url;
-                payload.title = previewContext.native.title;
-                payload.description = previewContext.native.description;
-                if (previewContext.native.thumbnail) payload.jpegThumbnail = previewContext.native.thumbnail;
+            if (previewContext && previewContext.externalAdReply) {
+                payload.contextInfo = { externalAdReply: previewContext.externalAdReply };
             }
         }
 
@@ -118,13 +148,26 @@ const broadcastWorker = new Worker(UNIQUE_QUEUE_NAME, async (job) => {
 
         if (mediaPath && fs.existsSync(mediaPath)) { try { fs.unlinkSync(mediaPath); } catch {} }
 
-        logger.success(`🚀 Delivered GC Status to: ${targetJid}`);
-        await delay(4000);
+        logger.success(`🚀 Delivered ${mode === 'advanced_status' ? 'GC Status' : 'Message'} to: ${targetJid}`);
+        
+        // Longer delay for GC Status to ensure proper delivery
+        const postDelay = mode === 'advanced_status' ? 5000 : 4000;
+        await delay(postDelay);
         return { targetJid };
 
     } catch (deliveryError) {
         const errMsg = String(deliveryError.message || deliveryError).toLowerCase();
-        if (errMsg.includes('403') || errMsg.includes('not-authorized')) return;
+        
+        // Log the specific error for debugging
+        if (errMsg.includes('ghost protocol')) {
+            logger.error(`❌ Ghost Protocol Failed for ${targetJid}: ${deliveryError.message}`);
+        } else if (errMsg.includes('403') || errMsg.includes('not-authorized')) {
+            logger.warn(`⚠️ Not authorized to send to ${targetJid} (likely removed from group)`);
+            return; // Don't retry if we're not in the group
+        } else {
+            logger.error(`❌ Delivery failed for ${targetJid}: ${deliveryError.message}`);
+        }
+        
         throw deliveryError;
     }
 }, { ...bullConfig, concurrency: 1 });

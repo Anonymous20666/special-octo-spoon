@@ -19,21 +19,46 @@ const yieldLoop = () => new Promise(resolve => setImmediate(resolve));
 
 // 🌸 SOFT LIFE & KAWAII BROADCAST WRAPPERS
 const AESTHETIC_TEMPLATES = [
-    (text) => `(づ｡◕‿‿◕｡)づ 💕\n\ncome join the vibe ✨\nit’s giving soft life 🌸\n\n🔗 ${text}`,
-    (text) => `ʕ•ᴥ•ʔ 🍵\n\nsweetest spot on your dash 🧦\nyou don't wanna miss this~\n\n🔗 ${text}`,
-    (text) => `(✿◠‿◠) 🍵\n\npure aesthetics & good vibes\nstep right in\n\n🔗 ${text}`,
-    (text) => `( ˘ ³˘)♥︎ 💅\n\nmain character energy only\nclick to enter 🎀\n\n🔗 ${text}`,
-    (text) => `(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧\n\nvibe check passed ✅\nwe're waiting for u\n\n🔗 ${text}`,
-    (text) => `(灬º‿º灬)♡ 🍓\n\nyour new digital home~\ncome say hi!\n\n🔗 ${text}`,
-    (text) => `(o˘◡˘o) ☁️\n\nhead in the clouds\nchilling right here ✨\n\n🔗 ${text}`,
-    (text) => `(◕‿◕✿) 🌷\n\ngrowing our little garden\nwe saved u a spot~\n\n🔗 ${text}`,
-    (text) => `(,,>﹏<,,) 🎧\n\nplaylist on, world off\ncome vibe with us\n\n🔗 ${text}`,
-    (text) => `(ᗒᗣᗕ) 🌙\n\nsleepy soft vibes\nlate night talks await\n\n🔗 ${text}`,
-    (text) => `໒(⋆ᴗ͈ˬᴗ͈)⋆* ੈ✩‧₊˚\n\nangel energy activated 🕊️\njoin us here\n\n🔗 ${text}`,
-    (text) => `(*¯︶¯*) ✨\n\nliving our best lives\nwelcome to the club\n\n🔗 ${text}`,
-    (text) => `(o^▽^o) 🦋\n\nbutterfly effect\nflutter in with us\n\n🔗 ${text}`,
-    (text) => `(≧◡≦) 🤎\n\npure intentions only\ncome through~\n\n🔗 ${text}`,
-    (text) => `( ◡‿◡ ) 🦢\n\nelegant & unbothered\nstep inside\n\n🔗 ${text}`
+    (text) => `୨୧ ───────────── ୨୧\nnot everyone is allowed in… 💕\n${text}\nbut you are ♡`,
+    (text) => `✧ ───────── ✧\ni probably shouldn't post this… 🎀\n${text}\njust join & see 👀♡`,
+    (text) => `───────── ♡\nbutterfly effect 🦋\n${text}\nflutter in softly ♡`,
+    (text) => `⋆ ˚｡⋆୨୧˚\nthis feels different…\n${text}\nyou'll see why ✨`,
+    (text) => `꒰ঌ ────── ໒꒱\npretty energy only 💕\n${text}\nyou belong here ♡`,
+    (text) => `✿ ───────── ✿\nlowkey not for everyone…\n${text}\nbut maybe you ♡`,
+    (text) => `୨♡୧ ─────── ୨♡୧\nthis is your sign ✨\n${text}\ndon't ignore it ♡`,
+    (text) => `✧･ﾟ: ───── :･ﾟ✧\nsoft space unlocked 🌸\n${text}\nstep in gently ♡`,
+    (text) => `☾ ───────── ☽\nyou didn't see this… 👀\n${text}\njust join ♡`,
+    (text) => `♡⃝ ───────── ♡⃝\nthis link is different 💎\n${text}\ntap & feel it ✧`,
+    (text) => `⋆｡˚ ───── ˚｡⋆\nrich energy only 💎\n${text}\nstep like you own it ♡`,
+    (text) => `❀ ───────── ❀\nwarning: bad b*tch vibes 🔥\n${text}\nhandle with care 😚`,
+    (text) => `꒰ა ─────── ໒꒱\nnot for basic energy…\n${text}\nupgrade yourself ♡`,
+    (text) => `✧♡ ───── ♡✧\nmain character only ✨\n${text}\nenter your era ♡`,
+    (text) => `♡̷ ───────── ♡̷\nthis isn't regular…\n${text}\nit's elite 👀`,
+    (text) => `⋆♡⋆ ───── ⋆♡⋆\nsoft but dangerous 🌸\n${text}\nyou'll feel it ♡`,
+    (text) => `☁︎ ───────── ☁︎\nanime world unlocked 🦋\n${text}\nstep inside ♡`,
+    (text) => `✧☾ ───── ☽✧\nkeep this lowkey…\n${text}\nreal ones only 👀`,
+    (text) => `♡₊˚ ───── ˚₊♡\nluxury mindset 💎\n${text}\ntap different ♡`,
+    (text) => `✿♡ ───── ♡✿\nyou found the vibe 🌸\n${text}\ndon't lose it ♡`,
+    (text) => `⋆✧⋆ ───── ⋆✧⋆\nthis one hits hard 🔥\n${text}\nno explanation ♡`,
+    (text) => `☾♡ ───── ♡☽\npretty but powerful 💕\n${text}\nwatch closely ♡`,
+    (text) => `♡✧♡ ───── ♡✧♡\ndon't overthink it…\n${text}\njust enter ✨`,
+    (text) => `❥ ───────── ❥\nsoft girl but make it rich 💎\n${text}\nlevel up ♡`,
+    (text) => `♡˚ ───── ˚♡\nnot everyone gets access…\n${text}\nyou did ♡`,
+    (text) => `✧❀✧ ───── ✧❀✧\ninvitation only 🎀\n${text}\nact fast ♡`,
+    (text) => `☁︎♡ ───── ♡☁︎\ncalm but elite 🌸\n${text}\nfeel it ♡`,
+    (text) => `♡⋆ ───── ⋆♡\nit's giving main energy ✨\n${text}\nstep in ♡`,
+    (text) => `✧♡✧ ───── ✧♡✧\nbaddie zone 🔥\n${text}\nenter softly ♡`,
+    (text) => `❀♡❀ ───── ❀♡❀\nyou might get obsessed 🍓\n${text}\ndon't blame me ♡`,
+    (text) => `☾⋆ ───── ⋆☾\nsilent flex 💎\n${text}\nreal ones know ♡`,
+    (text) => `♡☁︎♡ ───── ♡☁︎♡\nthis one's rare 💕\n${text}\ndon't miss it ♡`,
+    (text) => `✧˚ ───── ˚✧\njust one click…\n${text}\nwatch what happens ♡`,
+    (text) => `❥♡❥ ───── ❥♡❥\nyour era starts here ✨\n${text}\nstep up ♡`,
+    (text) => `⋆❀⋆ ───── ⋆❀⋆\nsoft anime vibes 🦋\n${text}\ndrift in ♡`,
+    (text) => `☾✧☽ ───── ☾✧☽\nexpensive taste only 💎\n${text}\nyou qualify ♡`,
+    (text) => `♡⋆♡ ───── ♡⋆♡\nnew world unlocked ✨\n${text}\nexplore ♡`,
+    (text) => `✧☁︎✧ ───── ✧☁︎✧\njust vibes 🌸\n${text}\ntap in ♡`,
+    (text) => `❀⋆❀ ───── ❀⋆❀\ndon't scroll past…\n${text}\nyou'll regret it 👀`,
+    (text) => `✿♡ ───── ♡✿♡\nlast chance… maybe 💕\n${text}\nbefore it's gone ♡`,
 ];
 
 async function saveSchedules() { 
@@ -80,14 +105,9 @@ function queueSchedule(meta) {
 
 async function fetchAllGroups(sock, botId, minMembers = 5) {
     const raw = await sock.groupFetchAllParticipating();
-    return Object.values(raw).filter(g => {
-        if (g.participants.length < minMembers) return false;
-        if (g.announce) {
-            const botMeta = g.participants.find(p => p.id.includes(botId));
-            if (!botMeta || !['admin', 'superadmin'].includes(botMeta.admin)) return false;
-        }
-        return true;
-    }).map(g => ({ id: g.id, size: g.participants.length }));
+    return Object.values(raw)
+        .filter(g => g.participants.length >= minMembers)
+        .map(g => ({ id: g.id, size: g.participants.length }));
 }
 
 // ==========================================

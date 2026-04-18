@@ -1,41 +1,34 @@
-// core/ai.memory.js
-const { connection: redis } = require('../services/redis');
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+'use strict';
+// core/ai.memory.js — Redis-backed conversation memory
 
-// 🧠 AUTO-ID: Grabs this panel's unique identity
-const nodeIdPath = path.join(__dirname, '../data/node-id.txt');
-let NODE_ID = '';
-if (fs.existsSync(nodeIdPath)) {
-    NODE_ID = fs.readFileSync(nodeIdPath, 'utf8').trim();
-} else {
-    NODE_ID = 'NODE_' + crypto.randomBytes(3).toString('hex').toUpperCase();
-    if (!fs.existsSync(path.dirname(nodeIdPath))) fs.mkdirSync(path.dirname(nodeIdPath), { recursive: true });
-    fs.writeFileSync(nodeIdPath, NODE_ID);
-}
+const { connection: redis } = require('../services/redis');
+const logger  = require('./logger');
+const NODE_ID = require('../utils/nodeId');
+const { safeJsonParse } = require('../utils/validator');
 
 async function getMemory(userId) {
     try {
-        // 👈 FIX: Appended NODE_ID so bots don't read each other's memories
-        const key = `ai_memory:${NODE_ID}:${userId}`;
+        const key  = `ai_memory:${NODE_ID}:${userId}`;
         const data = await redis.lrange(key, 0, 9);
-        return data.map(str => JSON.parse(str)).reverse();
+        return data
+            .map((str) => safeJsonParse(str))   // Fix: safeJsonParse instead of bare JSON.parse
+            .filter(Boolean)
+            .reverse();
     } catch (err) {
+        logger.warn('[AI Memory] getMemory failed', { error: err.message });
         return [];
     }
 }
 
 async function updateMemory(userId, userText, aiText) {
     try {
-        // 👈 FIX: Appended NODE_ID
-        const key = `ai_memory:${NODE_ID}:${userId}`;
+        const key   = `ai_memory:${NODE_ID}:${userId}`;
         const entry = JSON.stringify({ user: userText, ai: aiText });
         await redis.lpush(key, entry);
-        await redis.ltrim(key, 0, 9); 
-        await redis.expire(key, 3600); // 1 hour memory expiration
+        await redis.ltrim(key, 0, 19);  // keep last 20 exchanges
+        await redis.expire(key, 86400); // 24 hours
     } catch (err) {
-        // Safe fail
+        logger.warn('[AI Memory] updateMemory failed', { error: err.message });
     }
 }
 

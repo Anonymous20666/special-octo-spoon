@@ -17,7 +17,7 @@ if (fs.existsSync(nodeIdPath)) {
 }
 
 // Cooldown Limits in milliseconds
-const LIMITS = { user: 2500, group: 1000, globalFlood: 100 };
+const LIMITS = { user: 1000, group: 500, globalFlood: 50 };
 
 class RateLimiter {
     constructor() {
@@ -27,11 +27,11 @@ class RateLimiter {
     async check(userId, groupId = null) {
         const now = Date.now();
         
+        // Reduced global flood protection
         if (now - this.lastGlobalMessage < LIMITS.globalFlood) return false;
         this.lastGlobalMessage = now;
 
         try {
-            // 👈 FIX: Appended NODE_ID to the Redis lock so bots don't share timers!
             const userKey = `ratelimit:${NODE_ID}:user:${userId}`;
             const userSet = await redis.set(userKey, '1', 'PX', LIMITS.user, 'NX');
             if (!userSet) return false; 

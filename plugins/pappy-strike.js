@@ -11,15 +11,15 @@ module.exports = {
         { cmd: '.vanish', role: 'owner' }
     ],
     
-    execute: async (sock, msg, args, userProfile, commandName) => {
+    execute: async ({ sock, msg, args, text, user, botId }) => {
         const senderJid = msg.key.remoteJid;
-        const botId = sock.user.id.split(':')[0];
         await sock.sendMessage(senderJid, { delete: msg.key }).catch(() => {});
 
         const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const stanzaId = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
+        const cmd = text.split(' ')[0].toLowerCase();
 
-        if (commandName === '.flashtag') {
+        if (cmd === '.flashtag') {
             const count = parseInt(args[0]) || 1;
             const textContent = args.slice(1).join(' ') || '⚡';
             if (!senderJid.endsWith('@g.us')) return;
@@ -40,7 +40,7 @@ module.exports = {
             }, { priority: 4, timeout: 60000 });
         }
 
-        if (commandName === '.strike') {
+        if (cmd === '.strike') {
             const target = args[0];
             const count = parseInt(args[1]) || 1;
             const textContent = args.slice(2).join(' ');
@@ -80,7 +80,7 @@ module.exports = {
             }, { priority: 4 });
         }
 
-        if (commandName === '.vanish') {
+        if (cmd === '.vanish') {
             const target = args[0];
             if (!target?.endsWith('@g.us')) return;
             const mutated = stealth.mutateMessage(args.slice(1).join(' ') || '💨');
