@@ -19,7 +19,7 @@ async function searchAndDownload(query) {
 
     try {
         // Fast download: good quality, reasonable size, WhatsApp compatible
-        const cmd = `yt-dlp --cookies "${cookiesPath}" --js-runtimes node -x --audio-format mp3 --audio-quality 3 --max-filesize 20m --no-playlist --no-warnings --no-check-certificate --concurrent-fragments 3 -o "${outPath}" "ytsearch1:${safeQuery}"`;
+        const cmd = `yt-dlp --cookies "${cookiesPath}" --js-runtimes node --remote-components ejs:github -x --audio-format mp3 --audio-quality 3 --max-filesize 20m --no-playlist --no-warnings --no-check-certificate --concurrent-fragments 3 -o "${outPath}" "ytsearch1:${safeQuery}"`;
         await execAsync(cmd, { timeout: 50000 });
 
         if (!fs.existsSync(outPath)) throw new Error('Download failed');
@@ -38,7 +38,7 @@ async function getTrackInfo(query) {
     const cookiesPath = path.join(__dirname, '../data/youtube_cookies.txt');
     try {
         const { stdout } = await execAsync(
-            `yt-dlp --cookies "${cookiesPath}" --js-runtimes node --dump-json --no-playlist "ytsearch1:${query.replace(/[^a-zA-Z0-9 ]/g, '')}" --quiet`,
+            `yt-dlp --cookies "${cookiesPath}" --js-runtimes node --remote-components ejs:github --dump-json --no-playlist "ytsearch1:${query.replace(/[^a-zA-Z0-9 ]/g, '')}" --quiet`,
             { timeout: 15000 }
         );
         const info = JSON.parse(stdout);
