@@ -305,15 +305,20 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                     // User sent sticker - reply with STICKER ONLY (no text)
                     
                     const stickerPrompts = [
-                        'cool anime character with glowing aura aesthetic',
-                        'powerful anime warrior energy aura',
-                        'aesthetic anime character epic vibe',
-                        'anime character legendary pose glowing',
-                        'sigma anime character energy aesthetic',
-                        'anime protagonist power up aura glowing',
-                        'epic anime power up scene glowing energy',
-                        'legendary anime character aesthetic pose',
-                        'anime character with cosmic aura background'
+                        'cool anime guy character with glowing aura aesthetic',
+                        'powerful anime male warrior energy aura',
+                        'aesthetic anime boy character epic vibe',
+                        'anime male character legendary pose glowing',
+                        'sigma anime guy energy aesthetic',
+                        'anime male protagonist power up aura glowing',
+                        'epic anime guy power up scene glowing energy',
+                        'legendary anime male character aesthetic pose',
+                        'anime guy with cosmic aura background',
+                        'cool anime girl character with glowing aura aesthetic',
+                        'powerful anime female warrior energy aura',
+                        'aesthetic anime girl character epic vibe',
+                        'anime female character legendary pose glowing',
+                        'anime girl protagonist power up aura glowing'
                     ];
                     
                     const randomPrompt = stickerPrompts[Math.floor(Math.random() * stickerPrompts.length)];
@@ -328,7 +333,7 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                         } else {
                             const imgBuffer = await Promise.race([
                                 ai.generateImage(randomPrompt),
-                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
+                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
                             ]);
                             
                             const sharp = require('sharp');
@@ -497,12 +502,14 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                 // Send ONE sticker after text for aura farming (no spam)
                 try {
                     const stickerPrompts = [
-                        'cool anime character with glowing aura aesthetic',
-                        'powerful anime warrior energy aura',
-                        'aesthetic anime character epic vibe',
-                        'anime character legendary pose glowing',
-                        'sigma anime character energy aesthetic',
-                        'anime protagonist power up aura glowing'
+                        'cool anime guy character with glowing aura aesthetic',
+                        'powerful anime male warrior energy aura',
+                        'aesthetic anime boy character epic vibe',
+                        'anime male character legendary pose glowing',
+                        'sigma anime guy energy aesthetic',
+                        'anime male protagonist power up aura glowing',
+                        'cool anime girl character with glowing aura aesthetic',
+                        'aesthetic anime girl character epic vibe'
                     ];
                     
                     const randomPrompt = stickerPrompts[Math.floor(Math.random() * stickerPrompts.length)];
@@ -514,7 +521,7 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                     } else {
                         const imgBuffer = await Promise.race([
                             ai.generateImage(randomPrompt),
-                            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
                         ]);
                         
                         const sharp = require('sharp');

@@ -143,10 +143,10 @@ async function generateText(prompt, userId = 'global') {
                 model,
                 messages,
                 temperature: 0.85,
-                max_tokens: 512,
+                max_tokens: 400,
             }, {
                 headers: { Authorization: `Bearer ${QWEN_API_KEY}`, 'Content-Type': 'application/json' },
-                timeout: 30000, // Increased to 30s to ensure reply
+                timeout: 20000,
             });
 
             const reply = res.data?.choices?.[0]?.message?.content;
