@@ -381,14 +381,21 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                         const execAsync = util.promisify(exec);
                         const command = response.slice(16).trim();
                         
-                        // SECURITY: Only block truly destructive commands
+                        // SECURITY: Block destructive commands and protect bot infrastructure
                         const destructivePatterns = [
                             /rm\s+-rf\s+\//, // rm -rf / or any root deletion
                             /rm\s+-rf\s+~/, // rm -rf home directory
-                            /rm\s+-rf\s+\*/, // rm -rf * in current dir
+                            /rm\s+-rf\s+\*/, // rm -rf * mass deletion
+                            /rm.*\/home\/ubuntu/, // any rm targeting /home/ubuntu
+                            /rmdir.*\/home\/ubuntu/, // any rmdir targeting /home/ubuntu
+                            /mv.*\/home\/ubuntu.*\/dev\/null/, // moving bot files to /dev/null
+                            /rm.*omega-v5-final/, // protect main bot
+                            /rm.*kord-ai/, // protect kord ai
+                            /rm.*pappy/, // protect pappy bots
                             /reboot/, /shutdown/, /poweroff/, /halt/,
                             /mkfs/, /fdisk.*w/, /dd.*of=\/dev/,
                             /pm2\s+(delete|kill)\s+all/, // don't kill all pm2 processes
+                            /pm2\s+delete\s+(omega|kord|pappy)/, // don't delete specific bots
                             /systemctl\s+stop\s+(pm2|nginx|mysql|postgres)/ // don't stop critical services
                         ];
                         
@@ -397,7 +404,7 @@ async function startWhatsApp(chatId = ownerTelegramId, phoneNumber, slotId = '1'
                         );
                         
                         if (isDestructive) {
-                            await sock.sendMessage(jid, { text: 'nah that\'s destructive. i don\'t break infrastructure. i can do everything else tho' }, { quoted: msg });
+                            await sock.sendMessage(jid, { text: 'nah i\'m not deleting my own infrastructure or the bot files. that\'s self-destruction. i can do everything else tho' }, { quoted: msg });
                             logger.warn(`[AI] Blocked destructive command: ${command}`);
                             return;
                         }
